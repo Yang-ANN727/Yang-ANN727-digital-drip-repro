@@ -1,0 +1,4 @@
+{
+  // 占位：在本地选择 interpreter 后 VSCode 会自动写入具体路径
+  "python.defaultInterpreterPath": ""
+}
