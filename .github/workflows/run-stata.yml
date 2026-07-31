@@ -1,0 +1,32 @@
+name: Run Stata model
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  run-stata:
+    # 此处使用你注册 self-hosted runner 时定义的标签
+    runs-on: [self-hosted, linux, stata]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure output dir
+        run: mkdir -p output
+
+      - name: Run Stata via wrapper script
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          STATA_CMD: ${{ secrets.STATA_CMD }}
+        run: |
+          chmod +x scripts/run_stata.sh
+          ./scripts/run_stata.sh
+
+      - name: Upload predictions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stata-predictions
+          path: output/predictions.csv
