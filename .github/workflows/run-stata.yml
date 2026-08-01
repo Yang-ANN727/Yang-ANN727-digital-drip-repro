@@ -6,27 +6,58 @@ on:
 
 jobs:
   run-stata:
-    # 此处使用你注册 self-hosted runner 时定义的标签
-    runs-on: [self-hosted, linux, stata]
+    # 使用与你的 self-hosted runner 上显示的标签匹配（注意大小写）
+    runs-on: [self-hosted, Windows, stata]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Ensure output dir
-        run: mkdir -p output
+      - name: Ensure output dir (Windows)
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path output -Force | Out-Null
 
-      - name: Run Stata via wrapper script
+      - name: Run Stata via PowerShell wrapper
+        shell: powershell
         env:
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
           STATA_CMD: ${{ secrets.STATA_CMD }}
         run: |
-          chmod +x scripts/run_stata.sh
-          ./scripts/run_stata.sh
+          # 使用仓库 secrets 中的 STATA_CMD，或在未设置时使用默认可能的位置
+          if (-not $env:STATA_CMD -or $env:STATA_CMD -eq '') {
+            Write-Host "STATA_CMD secret not set — trying default paths..."
+            # 常见默认路径示例（可按实际路径修改或最好设置 STATA_CMD secret）
+            $possible = @(
+              "C:\Program Files\Stata17\StataSE.exe",
+              "C:\Program Files\Stata17\StataMP.exe",
+              "C:\Program Files\Stata17\Stata.exe"
+            )
+            foreach ($p in $possible) {
+              if (Test-Path $p) { $env:STATA_CMD = $p; break }
+            }
+          }
+
+          if (-not $env:STATA_CMD -or $env:STATA_CMD -eq '') {
+            Write-Error "STATA_CMD not found. Set repository secret STATA_CMD to the full path of your Stata executable."
+            exit 1
+          }
+
+          Write-Host "Using Stata command: $env:STATA_CMD"
+
+          # 调用 PowerShell 脚本（或直接运行命令）
+          # 确保 scripts\model.do 路径使用反斜杠
+          & $env:STATA_CMD -b do scripts\model.do
+          $exit = $LASTEXITCODE
+          if ($exit -ne 0) {
+            Write-Error "Stata exited with code $exit"
+            exit $exit
+          }
 
       - name: Upload predictions artifact
         uses: actions/upload-artifact@v4
         with:
           name: stata-predictions
-          path: output/predictions.csv
+          path: output\predictions.csv
