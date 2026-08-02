@@ -12,13 +12,11 @@ set more off
 capture log close _stata_log
 log using output/stata.log, text replace
 
-// 如果你的数据已经放在仓库的 data/ 下：
-if (filereadable("data/train.dta")) {
+// 检查 data/train.dta 是否存在（兼容所有 Stata 版本）
+capture confirm file "data/train.dta"
+if _rc == 0 {
     use "data/train.dta", clear
 } else {
-    // 如果你希望从数据库拉取数据，请在 runner 上提前准备好数据文件，或启用 Stata ODBC：
-    // odbc load, exec("SELECT id, y, x1, x2, cat FROM table_name") dsn("your_dsn")
-    // 或者在 runner 上先用脚本把查询结果导出为 train.dta
     di as err "data/train.dta not found. Place your Stata .dta file at data/train.dta or adapt this do-file to fetch data from DB."
     exit 1
 }
