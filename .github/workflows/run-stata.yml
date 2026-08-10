@@ -1,63 +1,79 @@
 name: Run Stata model
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   run-stata:
-    # 使用与你的 self-hosted runner 上显示的标签匹配（注意大小写）
-    runs-on: [self-hosted, Windows, X64, stata]
-
+    runs-on: [self-hosted, windows, stata-runner]   # 确保 runner 有这些标签，或按需修改
+    env:
+      STATA_CMD: ${{ secrets.STATA_CMD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Ensure output dir (Windows)
+      - name: Print runner info
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Path output -Force | Out-Null
+          Write-Host "Runner: $env:RUNNER_NAME"
+          Write-Host "Labels: $env:RUNNER_LABELS"
+          Write-Host "STATA_CMD(secret) = $env:STATA_CMD"
 
-      - name: Run Stata via PowerShell wrapper
+      - name: Resolve STATA_CMD (handle .lnk shortcut)
         shell: powershell
-        env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASS: ${{ secrets.DB_PASS }}
-          STATA_CMD: ${{ secrets.STATA_CMD }}
         run: |
-          # 使用仓库 secrets 中的 STATA_CMD，或在未设置时使用默认可能的位置
           if (-not $env:STATA_CMD -or $env:STATA_CMD -eq '') {
-            Write-Host "STATA_CMD secret not set — trying default paths..."
-            # 常见默认路径示例（可按实际路径修改或最好设置 STATA_CMD secret）
-            $possible = @(
-              "C:\Program Files\Stata17\StataSE.exe",
-              "C:\Program Files\Stata17\StataMP.exe",
-              "C:\Program Files\Stata17\Stata.exe"
-            )
-            foreach ($p in $possible) {
-              if (Test-Path $p) { $env:STATA_CMD = $p; break }
-            }
-          }
-
-          if (-not $env:STATA_CMD -or $env:STATA_CMD -eq '') {
-            Write-Error "STATA_CMD not found. Set repository secret STATA_CMD to the full path of your Stata executable."
+            Write-Error "STATA_CMD is not set. Please add repository secret STATA_CMD with path to Stata executable or .lnk."
             exit 1
           }
 
-          Write-Host "Using Stata command: $env:STATA_CMD"
+          $path = $env:STATA_CMD
+          # If user provided a quoted value when creating secret, remove surrounding quotes
+          if ($path.StartsWith('"') -and $path.EndsWith('"')) { $path = $path.Trim('"') }
 
-          # 调用 PowerShell 脚本（或直接运行命令）
-          # 确保 scripts\model.do 路径使用反斜杠
-          & $env:STATA_CMD -b do scripts\model.do
-          $exit = $LASTEXITCODE
-          if ($exit -ne 0) {
-            Write-Error "Stata exited with code $exit"
-            exit $exit
+          if ($path -like '*.lnk') {
+            Write-Host "STATA_CMD points to a .lnk shortcut. Attempting to resolve..."
+            try {
+              $w = New-Object -ComObject WScript.Shell
+              $lnk = $w.CreateShortcut($path)
+              $target = $lnk.TargetPath
+            } catch {
+              Write-Error "Failed to resolve shortcut: $_"
+              exit 1
+            }
+            if (-not $target) {
+              Write-Error "Could not resolve shortcut target. Please set STATA_CMD to the actual exe path."
+              exit 1
+            }
+            Write-Host "Resolved shortcut target: $target"
+            Add-Content -Path $env:GITHUB_ENV -Value "STATA_RESOLVED=$target"
+          } else {
+            Add-Content -Path $env:GITHUB_ENV -Value "STATA_RESOLVED=$path"
           }
 
-      - name: Upload predictions artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: stata-predictions
-          path: output\predictions.csv
+      - name: Verify Stata executable exists
+        shell: powershell
+        run: |
+          Write-Host "STATA_RESOLVED=$env:STATA_RESOLVED"
+          if (-not (Test-Path $env:STATA_RESOLVED)) {
+            Write-Error "Stata executable not found at $env:STATA_RESOLVED"
+            exit 1
+          }
+          Write-Host "Stata executable found."
+
+      - name: Run Stata model (batch)
+        shell: powershell
+        run: |
+          $stata = $env:STATA_RESOLVED
+          Write-Host "Starting Stata: $stata"
+          # 使用 -b (batch) 运行，注意 scripts\model.do 路径按仓库结构调整
+          & "$stata" -b do "scripts\model.do"
+          $exit = $LASTEXITCODE
+          Write-Host "Stata exited with code $exit"
+          if ($exit -ne 0) {
+            Write-Error "Stata failed with exit code $exit"
+            exit $exit
+          }
+          Write-Host "Stata run completed successfully."
