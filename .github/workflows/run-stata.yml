@@ -7,7 +7,7 @@ on:
 jobs:
   run-stata:
     # 使用与你的 self-hosted runner 上显示的标签匹配（注意大小写）
-    runs-on: [self-hosted, Windows, stata]
+    runs-on: [self-hosted, Windows, X64, stata]
 
     steps:
       - name: Checkout
