@@ -63,17 +63,58 @@ jobs:
           }
           Write-Host "Stata executable found."
 
-      - name: Run Stata model (batch)
+            - name: Run Stata model (robust)
         shell: powershell
         run: |
+          # 读取解析好的路径（上一步应该写入 STATA_RESOLVED 到 GITHUB_ENV）
           $stata = $env:STATA_RESOLVED
+          if (-not $stata) { Write-Error "STATA_RESOLVED not set"; exit 1 }
+
+          # 去掉首尾双引号（如果 secret 里意外带了引号）
+          if ($stata.StartsWith('"') -and $stata.EndsWith('"')) { $stata = $stata.Trim('"') }
+
           Write-Host "Starting Stata: $stata"
-          # 使用 -b (batch) 运行，注意 scripts\model.do 路径按仓库结构调整
-          & "$stata" -b do "scripts\model.do"
-          $exit = $LASTEXITCODE
-          Write-Host "Stata exited with code $exit"
-          if ($exit -ne 0) {
+          if (-not (Test-Path $stata)) {
+            Write-Error "Stata executable not found at: $stata"
+            exit 1
+          }
+
+          # 准备参数和重定向路径
+          $doFile = "scripts\model.do"
+          $workDir = "$env:GITHUB_WORKSPACE"
+          $outFile = Join-Path $workDir "stata_stdout.txt"
+          $errFile = Join-Path $workDir "stata_stderr.txt"
+
+          # 如果能使用 Start-Process 获取 ExitCode，则用它（PowerShell 5+ 支持 -Wait -PassThru）
+          try {
+            $argList = "-b","do",$doFile
+            $proc = Start-Process -FilePath $stata -ArgumentList $argList -WorkingDirectory $workDir -NoNewWindow -PassThru -Wait
+            $exit = $proc.ExitCode
+          } catch {
+            # 兼容性回退：尝试直接调用并用 $LASTEXITCODE（如果 Start-Process 报错）
+            Write-Host "Start-Process failed, falling back to direct invocation (&). Error: $_"
+            & "$stata" -b do "$doFile"
+            $exit = $LASTEXITCODE
+          }
+
+          Write-Host "Stata exit code: '$exit'"
+
+          # 打印 Stata 输出日志（do 脚本通常会产生日志文件；也打印我们尝试记录的 stdout/stderr）
+          if (Test-Path $outFile) { Write-Host "---- Stata stdout ----"; Get-Content $outFile -Raw | Write-Host }
+          if (Test-Path $errFile) { Write-Host "---- Stata stderr ----"; Get-Content $errFile -Raw | Write-Host }
+
+          # 查找 repo 工作目录下可能的 Stata 生成的 .log 文件 并打印最后 200 行（帮助排查错误内容）
+          Get-ChildItem -Path $workDir -Filter *.log -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "---- LOG FILE: $($_.FullName) ----"
+            Get-Content $_.FullName -Tail 200 | ForEach-Object { Write-Host $_ }
+          }
+
+          if ($null -eq $exit) {
+            Write-Error "Could not determine Stata exit code (ExitCode is null). Ensure STATA_CMD points to the real exe, not a .lnk, and Stata runs non-interactively."
+            exit 1
+          } elseif ($exit -ne 0) {
             Write-Error "Stata failed with exit code $exit"
             exit $exit
+          } else {
+            Write-Host "Stata completed successfully with exit code 0"
           }
-          Write-Host "Stata run completed successfully."
