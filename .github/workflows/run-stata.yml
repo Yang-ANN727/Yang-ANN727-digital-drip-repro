@@ -1,53 +1,30 @@
 name: Run Stata model
+
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   run-stata:
-    runs-on: [self-hosted, windows, stata-runner]   # 确保 runner 有这些标签，或按需修改
+    runs-on: [self-hosted, windows, stata-runner]   # 确保你的 runner 有这些标签
     env:
       STATA_CMD: ${{ secrets.STATA_CMD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Print runner info
+      - name: Resolve STATA_CMD (.lnk -> exe) and set env
         shell: powershell
         run: |
-          Write-Host "Runner: $env:RUNNER_NAME"
-          Write-Host "Labels: $env:RUNNER_LABELS"
-          Write-Host "STATA_CMD(secret) = $env:STATA_CMD"
-
-      - name: Resolve STATA_CMD (handle .lnk shortcut)
-        shell: powershell
-        run: |
-          if (-not $env:STATA_CMD -or $env:STATA_CMD -eq '') {
-            Write-Error "STATA_CMD is not set. Please add repository secret STATA_CMD with path to Stata executable or .lnk."
-            exit 1
-          }
-
-          $path = $env:STATA_CMD
-          # If user provided a quoted value when creating secret, remove surrounding quotes
-          if ($path.StartsWith('"') -and $path.EndsWith('"')) { $path = $path.Trim('"') }
-
+          if (-not $env:STATA_CMD -or $env:STATA_CMD -eq '') { Write-Error 'STATA_CMD not set'; exit 1 }
+          $path = $env:STATA_CMD.Trim('"')
           if ($path -like '*.lnk') {
-            Write-Host "STATA_CMD points to a .lnk shortcut. Attempting to resolve..."
-            try {
-              $w = New-Object -ComObject WScript.Shell
-              $lnk = $w.CreateShortcut($path)
-              $target = $lnk.TargetPath
-            } catch {
-              Write-Error "Failed to resolve shortcut: $_"
-              exit 1
-            }
-            if (-not $target) {
-              Write-Error "Could not resolve shortcut target. Please set STATA_CMD to the actual exe path."
-              exit 1
-            }
-            Write-Host "Resolved shortcut target: $target"
+            $w = New-Object -ComObject WScript.Shell
+            $lnk = $w.CreateShortcut($path)
+            $target = $lnk.TargetPath
+            if (-not $target) { Write-Error "Failed to resolve .lnk target"; exit 1 }
+            Write-Host "Resolved STATA target: $target"
             Add-Content -Path $env:GITHUB_ENV -Value "STATA_RESOLVED=$target"
           } else {
             Add-Content -Path $env:GITHUB_ENV -Value "STATA_RESOLVED=$path"
@@ -57,64 +34,48 @@ jobs:
         shell: powershell
         run: |
           Write-Host "STATA_RESOLVED=$env:STATA_RESOLVED"
-          if (-not (Test-Path $env:STATA_RESOLVED)) {
-            Write-Error "Stata executable not found at $env:STATA_RESOLVED"
-            exit 1
-          }
-          Write-Host "Stata executable found."
+          if (-not (Test-Path $env:STATA_RESOLVED)) { Write-Error "Stata exe not found"; exit 1 }
 
-            - name: Run Stata model (robust)
+      - name: Run Stata model (robust)
         shell: powershell
         run: |
-          # 读取解析好的路径（上一步应该写入 STATA_RESOLVED 到 GITHUB_ENV）
-          $stata = $env:STATA_RESOLVED
-          if (-not $stata) { Write-Error "STATA_RESOLVED not set"; exit 1 }
-
-          # 去掉首尾双引号（如果 secret 里意外带了引号）
-          if ($stata.StartsWith('"') -and $stata.EndsWith('"')) { $stata = $stata.Trim('"') }
-
+          $stata = $env:STATA_RESOLVED.Trim('"')
+          $do = "scripts\model.do"           # 如有必要按 repo 路径调整
+          $work = $env:GITHUB_WORKSPACE
           Write-Host "Starting Stata: $stata"
-          if (-not (Test-Path $stata)) {
-            Write-Error "Stata executable not found at: $stata"
-            exit 1
-          }
+          $logstdout = Join-Path $work "stata_stdout.txt"
+          $logstderr = Join-Path $work "stata_stderr.txt"
 
-          # 准备参数和重定向路径
-          $doFile = "scripts\model.do"
-          $workDir = "$env:GITHUB_WORKSPACE"
-          $outFile = Join-Path $workDir "stata_stdout.txt"
-          $errFile = Join-Path $workDir "stata_stderr.txt"
-
-          # 如果能使用 Start-Process 获取 ExitCode，则用它（PowerShell 5+ 支持 -Wait -PassThru）
           try {
-            $argList = "-b","do",$doFile
-            $proc = Start-Process -FilePath $stata -ArgumentList $argList -WorkingDirectory $workDir -NoNewWindow -PassThru -Wait
+            $proc = Start-Process -FilePath $stata -ArgumentList ("-b","do",$do) -WorkingDirectory $work -NoNewWindow -RedirectStandardOutput $logstdout -RedirectStandardError $logstderr -PassThru -Wait
             $exit = $proc.ExitCode
           } catch {
-            # 兼容性回退：尝试直接调用并用 $LASTEXITCODE（如果 Start-Process 报错）
-            Write-Host "Start-Process failed, falling back to direct invocation (&). Error: $_"
-            & "$stata" -b do "$doFile"
+            Write-Host "Start-Process failed: $_. Trying direct invocation..."
+            & "$stata" -b do "$do"
             $exit = $LASTEXITCODE
           }
 
-          Write-Host "Stata exit code: '$exit'"
+          Write-Host "Stata exit code: $exit"
+          if (Test-Path $logstdout) { Write-Host "---- STDOUT ----"; Get-Content $logstdout -Raw | Write-Host }
+          if (Test-Path $logstderr) { Write-Host "---- STDERR ----"; Get-Content $logstderr -Raw | Write-Host }
 
-          # 打印 Stata 输出日志（do 脚本通常会产生日志文件；也打印我们尝试记录的 stdout/stderr）
-          if (Test-Path $outFile) { Write-Host "---- Stata stdout ----"; Get-Content $outFile -Raw | Write-Host }
-          if (Test-Path $errFile) { Write-Host "---- Stata stderr ----"; Get-Content $errFile -Raw | Write-Host }
-
-          # 查找 repo 工作目录下可能的 Stata 生成的 .log 文件 并打印最后 200 行（帮助排查错误内容）
-          Get-ChildItem -Path $workDir -Filter *.log -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Host "---- LOG FILE: $($_.FullName) ----"
+          # 打印仓库下的任何 .log（Stata do 脚本通常会生成）
+          Get-ChildItem -Path $work -Filter *.log -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "---- FILE: $($_.FullName) ----"
             Get-Content $_.FullName -Tail 200 | ForEach-Object { Write-Host $_ }
           }
 
-          if ($null -eq $exit) {
-            Write-Error "Could not determine Stata exit code (ExitCode is null). Ensure STATA_CMD points to the real exe, not a .lnk, and Stata runs non-interactively."
-            exit 1
-          } elseif ($exit -ne 0) {
-            Write-Error "Stata failed with exit code $exit"
-            exit $exit
-          } else {
-            Write-Host "Stata completed successfully with exit code 0"
-          }
+          if ($null -eq $exit) { Write-Error "No exit code. Ensure STATA_CMD points to exe."; exit 1 }
+          if ($exit -ne 0) { Write-Error "Stata failed with code $exit"; exit $exit }
+          Write-Host "Stata completed OK."
+
+      - name: Upload artifacts (logs & outputs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: stata-results
+          path: |
+            scripts/**/*.log
+            *.log
+            stata_stdout.txt
+            stata_stderr.txt
+            results/**/*   # 如果你有 results 目录保存输出
