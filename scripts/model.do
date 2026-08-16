@@ -1,3 +1,4 @@
+cap mkdir "output" capture log close _stata_log log using "output/stata.log", text replace capture confirm file "data/train.dta" if _rc != 0 { display as error "data/train.dta not found" exit 1 }
 /*
 Template Stata do-file: scripts/model.do
 - 读取 data/train.dta（或在下面注释的 ODBC/数据库片段中替换为从数据库拉取数据）
