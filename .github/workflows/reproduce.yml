@@ -1,0 +1,56 @@
+name: Run Stata Reproduction
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master"]
+
+jobs:
+  run-stata:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify files
+        shell: powershell
+        run: |
+          Write-Host "Working dir: $(Get-Location)"
+          Get-ChildItem -Force
+
+      - name: Run reproduce.do with Stata/MP
+        shell: powershell
+        run: |
+          $stataPaths = @(
+            "C:\Program Files\Stata18\StataMP-64.exe",
+            "C:\Program Files\Stata17\StataMP-64.exe",
+            "C:\Program Files\Stata18\StataSE-64.exe",
+            "C:\Program Files\Stata17\StataSE-64.exe"
+          )
+
+          $stataExe = $null
+          foreach ($p in $stataPaths) {
+            if (Test-Path $p) { $stataExe = $p; break }
+          }
+
+          if (-not $stataExe) {
+            Write-Error "Stata executable not found. Please edit workflow with your real Stata path."
+            exit 1
+          }
+
+          Write-Host "Using Stata at: $stataExe"
+          & $stataExe /e do reproduce.do
+
+      - name: Upload artifacts (logs/results)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stata-output
+          path: |
+            run.log
+            *.log
+            *.txt
+            *.dta
+            *.csv
+            *.xlsx
