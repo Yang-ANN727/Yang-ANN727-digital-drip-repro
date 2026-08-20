@@ -18,12 +18,19 @@ jobs:
         run: |
           Write-Host "Working dir: $(Get-Location)"
           Get-ChildItem -Force
+          if (!(Test-Path "reproduce.do")) { throw "reproduce.do not found" }
+          if (!(Test-Path "data.dta")) { throw "data.dta not found" }
 
-      - name: Run reproduce.do with Stata/MP
+      - name: Run reproduce.do with Stata
         shell: powershell
         run: |
           $stataPaths = @(
-            "C:\Program Files\StataNow19\StataMP-64.exe"
+            "C:\Program Files\StataNow19\StataMP-64.exe",
+            "C:\Program Files\StataNow19\StataSE-64.exe",
+            "C:\Program Files\Stata18\StataMP-64.exe",
+            "C:\Program Files\Stata18\StataSE-64.exe",
+            "C:\Program Files\Stata17\StataMP-64.exe",
+            "C:\Program Files\Stata17\StataSE-64.exe"
           )
 
           $stataExe = $null
@@ -38,6 +45,7 @@ jobs:
 
           Write-Host "Using Stata at: $stataExe"
           & $stataExe /e do reproduce.do
+          if ($LASTEXITCODE -ne 0) { throw "Stata exit code: $LASTEXITCODE" }
 
       - name: Upload artifacts (logs/results)
         if: always()
