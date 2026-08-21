@@ -1,0 +1,13 @@
+﻿name: Run Stata Reproduction
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+jobs:
+  run-stata:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "workflow is visible and runnable"
