@@ -44,8 +44,22 @@ jobs:
           }
 
           Write-Host "Using Stata at: $stataExe"
-          & $stataExe /e do reproduce.do
-          if ($LASTEXITCODE -ne 0) { throw "Stata exit code: $LASTEXITCODE" }
+if (Test-Path "run.log") { Remove-Item "run.log" -Force }
+
+& $stataExe /e do reproduce.do
+
+Start-Sleep -Seconds 5
+
+if (!(Test-Path "run.log")) {
+  throw "Stata finished but run.log not found."
+}
+
+$logText = Get-Content "run.log" -Raw
+if ($logText -match "r\([0-9]+\);") {
+  throw "Stata reported an error. Check run.log artifact."
+}
+
+Write-Host "Stata finished without detected r() error."
 
       - name: Upload artifacts (logs/results)
         if: always()
