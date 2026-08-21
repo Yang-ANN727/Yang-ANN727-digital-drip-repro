@@ -1,4 +1,4 @@
-name: Run Stata Reproduction
+﻿name: Run Stata Reproduction
 
 on:
   workflow_dispatch:
