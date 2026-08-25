@@ -40,12 +40,23 @@ jobs:
           Write-Host "PWD: $(Get-Location)"
           Get-ChildItem -Force
 
-      - name: Verify required files
+      - name: Verify required files + fingerprint data.dta
         shell: powershell
         run: |
+          Write-Host "PWD: $(Get-Location)"
+          Get-ChildItem -Force
+
           if (!(Test-Path "reproduce.do")) { throw "reproduce.do not found" }
           if (!(Test-Path "data.dta")) { throw "data.dta not found" }
 
+          $f = Get-Item "data.dta"
+          Write-Host "data.dta size = $($f.Length) bytes"
+          Get-FileHash "data.dta" -Algorithm SHA256 | Format-List
+
+          # 打印前 200 字符，确认不是空/异常替换
+          $head = Get-Content "data.dta" -TotalCount 1
+          Write-Host "data.dta head:"
+          Write-Host $head
       - name: Locate Stata executable
         id: locate_stata
         shell: powershell
