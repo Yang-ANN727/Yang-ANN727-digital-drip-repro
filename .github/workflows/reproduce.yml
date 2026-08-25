@@ -10,4 +10,59 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - run: echo "workflow is visible and runnable"
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Verify required files + fingerprint data.dta
+        shell: powershell
+        run: |
+          Write-Host "PWD: $(Get-Location)"
+          Get-ChildItem -Force
+          if (!(Test-Path "reproduce.do")) { throw "reproduce.do not found" }
+          if (!(Test-Path "data.dta")) { throw "data.dta not found" }
+          $f = Get-Item "data.dta"
+          Write-Host "data.dta size = $($f.Length) bytes"
+          Get-FileHash "data.dta" -Algorithm SHA256 | Format-List
+          $head = Get-Content "data.dta" -TotalCount 1
+          Write-Host "data.dta head:"
+          Write-Host $head
+
+      - name: Run reproduce.do with StataNow19
+        shell: powershell
+        run: |
+          $exe = "C:\Program Files\StataNow19\StataMP-64.exe"
+          if (!(Test-Path $exe)) { throw "Stata exe not found: $exe" }
+
+          if (Test-Path "run.log") { Remove-Item "run.log" -Force }
+          & $exe /e do reproduce.do
+          Start-Sleep -Seconds 5
+
+          if (!(Test-Path "run.log")) { throw "run.log not generated" }
+
+          $logText = Get-Content "run.log" -Raw
+          if ($logText -match "r\([0-9]+\);") {
+            throw "Stata reported r() error in run.log."
+          }
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stata-output
+          path: |
+            run.log
+            *.log
+            *.txt
+            *.dta
+
+      - name: Print tail of run.log on failure
+        if: failure()
+        shell: powershell
+        run: |
+          if (Test-Path "run.log") {
+            Write-Host "===== run.log (last 120 lines) ====="
+            Get-Content "run.log" -Tail 120
+          } else {
+            Write-Host "run.log not found"
+          }
