@@ -29,11 +29,11 @@ jobs:
           if (-not $ok) { throw "Network preflight failed: cannot reach github.com:443" }
 
       - name: Checkout repository (retry by Actions)
-        uses: actions/checkout@v4
+        - uses: actions/checkout@v4
         with:
           fetch-depth: 1
           lfs: false
-
+          
       - name: Show workspace
         shell: powershell
         run: |
