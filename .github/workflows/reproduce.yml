@@ -40,10 +40,21 @@ jobs:
 
           if (!(Test-Path "run.log")) { throw "run.log not generated" }
 
-          $logText = Get-Content "run.log" -Raw
-          if ($logText -match "r\([0-9]+\);") {
-            throw "Stata reported r() error in run.log."
+          $lines = Get-Content "run.log"
+          $err = $null
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match "r\([0-9]+\);") { $err = $i; break }
           }
+
+          if ($null -ne $err) {
+            $start = [Math]::Max(0, $err - 8)
+            $end   = [Math]::Min($lines.Count - 1, $err + 4)
+            Write-Host "===== First r() context ====="
+            for ($j = $start; $j -le $end; $j++) { Write-Host $lines[$j] }
+            throw "Stata reported first r() error at line index $err"
+          }
+
+          Write-Host "No r() error detected."
 
       - name: Upload artifacts
         if: always()
