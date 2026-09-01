@@ -13,10 +13,13 @@ cd "`c(pwd)'"
 capture log close
 log using "run.log", replace text
 
-use "data.dta", clear
+
 
 *调用数据*
-use 数据.dta, clear
+capture confirm file "data.csv"
+if _rc exit 601
+import delimited using "data.csv", clear varn(1) encoding(UTF-8)
+destring id year, replace force
 
 xtset id year
 global control "size listage roa ato cashflow growth board indep mfee"
