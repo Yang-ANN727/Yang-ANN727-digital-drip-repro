@@ -24,6 +24,14 @@ jobs:
           if (!(Test-Path "reproduce.do")) { throw "reproduce.do not found" }
           if (!(Test-Path "data.csv")) { throw "data.csv not found" }
 
+      - name: Debug revision and file head
+        shell: powershell
+        run: |
+          git rev-parse HEAD
+          git log -1 --oneline
+          Write-Host "----- reproduce.do head -----"
+          Get-Content .\reproduce.do -TotalCount 80
+
       - name: Run reproduce.do with StataNow19
         shell: powershell
         run: |
