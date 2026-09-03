@@ -35,38 +35,38 @@ jobs:
           Write-Host "=== REPRODUCE.DO HEAD (first 80 lines) ==="
           Get-Content ".\reproduce.do" -TotalCount 80
 
-     - name: Run reproduce.do with StataNow19
-       shell: powershell
-       run: |
-         $exe = "C:\Program Files\StataNow19\StataMP-64.exe"
-         if (!(Test-Path $exe)) { throw "Stata executable not found: $exe" }
-         if (!(Test-Path ".\reproduce.do")) { throw "reproduce.do not found" }
-         if (!(Test-Path ".\data.csv")) { throw "data.csv not found before Stata run" }
+       - name: Run reproduce.do with StataNow19
+         shell: powershell
+         run: |
+           $exe = "C:\Program Files\StataNow19\StataMP-64.exe"
+           if (!(Test-Path $exe)) { throw "Stata executable not found: $exe" }
+           if (!(Test-Path ".\reproduce.do")) { throw "reproduce.do not found" }
+           if (!(Test-Path ".\data.csv")) { throw "data.csv not found before Stata run" }
 
-         @'
-         capture log close
-         log using "run.log", replace text
-         do "reproduce.do"
-         log close
-         exit, clear
-         '@ | Set-Content -Encoding ASCII .\ci_entry.do
+           @'
+           capture log close
+           log using "run.log", replace text
+           do "reproduce.do"
+           log close
+           exit, clear
+           '@ | Set-Content -Encoding ASCII .\ci_entry.do
 
-         & $exe /e do .\ci_entry.do
+           & $exe /e do .\ci_entry.do
 
-         Start-Sleep -Seconds 2
-         if (!(Test-Path ".\run.log")) {
+           Start-Sleep -Seconds 2
+           if (!(Test-Path ".\run.log")) {
            Write-Host "=== workspace files ==="
            Get-ChildItem -Force | Select-Object Name,Length,LastWriteTime
            throw "run.log not generated"
-       }
+           }
 
-         $log = Get-Content ".\run.log" -Raw
-         if ($log -match "r\(([0-9]+)\)") {
+           $log = Get-Content ".\run.log" -Raw
+           if ($log -match "r\(([0-9]+)\)") {
            $err = $matches[1]
            Write-Host "===== First r() context ====="
            Write-Host $log
-         throw "Stata reported first r() error: r($err)"
-        }
+           throw "Stata reported first r() error: r($err)"
+           }
     
       - name: Upload run.log
         if: always()
