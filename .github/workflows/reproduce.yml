@@ -1,5 +1,4 @@
 ﻿name: Run Stata Reproduction
-
 on:
   workflow_dispatch:
 
