@@ -2,72 +2,63 @@
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
 
 jobs:
-  run-stata:
+  reproduce:
     runs-on: self-hosted
-    timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          lfs: false
 
-      - name: Verify required files
+      - name: Debug workspace and script
         shell: powershell
         run: |
-          Write-Host "PWD: $(Get-Location)"
-          Get-ChildItem -Force
-          if (!(Test-Path "reproduce.do")) { throw "reproduce.do not found" }
-          if (!(Test-Path "data.csv")) { throw "data.csv not found" }
-
-      - name: Debug revision and file head
-        shell: powershell
-        run: |
+          Write-Host "=== COMMIT ==="
           git rev-parse HEAD
           git log -1 --oneline
-          Write-Host "----- reproduce.do head -----"
-          Get-Content .\reproduce.do -TotalCount 80
+
+          Write-Host "=== ROOT FILES ==="
+          Get-ChildItem -Force | Select-Object Name,Length,LastWriteTime
+
+          Write-Host "=== CHECK DATA CSV ==="
+          if (Test-Path ".\data.csv") {
+            Write-Host "data.csv exists"
+            Get-Item ".\data.csv" | Format-List FullName,Length,LastWriteTime
+          } else {
+            Write-Error "data.csv missing in workspace root"
+            exit 1
+          }
+
+          Write-Host "=== REPRODUCE.DO HEAD (first 80 lines) ==="
+          Get-Content ".\reproduce.do" -TotalCount 80
 
       - name: Run reproduce.do with StataNow19
         shell: powershell
         run: |
           $exe = "C:\Program Files\StataNow19\StataMP-64.exe"
-          if (!(Test-Path $exe)) { throw "Stata exe not found: $exe" }
+          if (!(Test-Path $exe)) { throw "Stata executable not found: $exe" }
 
-          if (Test-Path "run.log") { Remove-Item "run.log" -Force }
+          if (!(Test-Path ".\reproduce.do")) { throw "reproduce.do not found" }
+          if (!(Test-Path ".\data.csv")) { throw "data.csv not found before Stata run" }
 
           & $exe /e do reproduce.do
-          Start-Sleep -Seconds 5
 
-          if (!(Test-Path "run.log")) { throw "run.log not generated" }
+          if (!(Test-Path ".\run.log")) { throw "run.log not generated" }
+          $log = Get-Content ".\run.log" -Raw
 
-          $lines = Get-Content "run.log"
-          $err = $null
-          for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i] -match "r\([0-9]+\);") { $err = $i; break }
-          }
-
-          if ($null -ne $err) {
-            $start = [Math]::Max(0, $err - 8)
-            $end   = [Math]::Min($lines.Count - 1, $err + 4)
+          if ($log -match "r\(([0-9]+)\)") {
+            $err = $matches[1]
             Write-Host "===== First r() context ====="
-            for ($j = $start; $j -le $end; $j++) { Write-Host $lines[$j] }
-            throw "Stata reported first r() error at line index $err"
+            Write-Host $log
+            throw "Stata reported first r() error: r($err)"
           }
 
-          Write-Host "No r() error detected."
-
-      - name: Upload artifacts
+      - name: Upload run.log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stata-output
-          path: |
-            run.log
-            *.log
-            *.txt
-            *.csv
+          name: run-log
+          path: run.log
