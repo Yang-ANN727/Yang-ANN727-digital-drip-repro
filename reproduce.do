@@ -7,19 +7,103 @@
 clear all
 set more off
 
-* 保证在 GitHub Actions checkout 后的仓库根目录运行
-cd "`c(pwd)'"
-
 capture log close
 log using "run.log", replace text
 
-
-
-*调用数据*
+* 假定脚本从仓库根目录执行（GitHub Actions 当前工作目录）
 capture confirm file "data.csv"
-if _rc exit 601
-import delimited using "data.csv", clear varn(1) encoding(UTF-8)
-destring id year, replace force
+if _rc {
+    di as error "data.csv not found in the repository root working directory"
+    capture log close
+    exit 601
+}
+
+capture noisily import delimited using "data.csv", clear varnames(1) encoding(UTF-8)
+if _rc {
+    local import_rc = _rc
+    di as error "Failed to import data.csv (rc = `import_rc')"
+    capture log close
+    exit `import_rc'
+}
+
+* 将常见的小写 CSV 表头统一为后续分析使用的混合大小写变量名
+capture rename idig IDig
+capture rename hdig HDig
+capture rename mdig MDig
+capture rename hdigmid HDigMid
+capture rename ivhdig IVHDig
+capture rename ivmdig IVMDig
+capture rename idigp IDigP
+capture rename hdig1 HDig1
+capture rename mdig1 MDig1
+capture rename hlea HLea
+capture rename mlea MLea
+capture rename hgra HGra
+capture rename mgra MGra
+capture rename hpen HPen
+capture rename mpen MPen
+capture rename hexp HExp
+capture rename mexp MExp
+capture rename hsim HSim
+capture rename msim MSim
+capture rename hdighsim HDigHSim
+capture rename mdigmsim MDigMsim
+capture rename hcgap HCGap
+capture rename mcgap MCGap
+capture rename hdighcgap HDigHCGap
+capture rename mdigmcgap MDigMCGap
+capture rename hegap HEGap
+capture rename megap MEGap
+capture rename hdighegap HDigHEGap
+capture rename mdigmegap MDigMEGap
+capture rename hmanufac Hmanufac
+capture rename hservice Hservice
+capture rename happlica Happlica
+capture rename helement Helement
+capture rename mmanufac Mmanufac
+capture rename mservice Mservice
+capture rename mapplica Mapplica
+capture rename melement Melement
+capture rename heco HEco
+capture rename meco MEco
+capture rename hele HEle
+capture rename mele MEle
+capture rename hclu HClu
+capture rename mclu MClu
+capture rename hmar HMar
+capture rename mmar MMar
+capture rename hsize Hsize
+capture rename hlistage Hlistage
+capture rename hroa Hroa
+capture rename hato Hato
+capture rename hcashflow Hcashflow
+capture rename hgrowth Hgrowth
+capture rename hindep Hindep
+capture rename hmfee Hmfee
+capture rename msize Msize
+capture rename mlistage Mlistage
+capture rename mroa Mroa
+capture rename mato Mato
+capture rename mcashflow Mcashflow
+capture rename mgrowth Mgrowth
+capture rename mindep Mindep
+capture rename mmfee Mmfee
+
+foreach v in id year indy ind IDig HDig MDig {
+    capture confirm variable `v'
+    if _rc {
+        di as error "Required variable `v' is missing after importing data.csv and normalizing headers"
+        ds
+        capture log close
+        exit 111
+    }
+}
+
+capture confirm string variable id
+if !_rc destring id, replace force
+
+capture confirm string variable year
+if !_rc destring year, replace force
 
 xtset id year
 global control "size listage roa ato cashflow growth board indep mfee"
